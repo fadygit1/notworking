@@ -1,0 +1,36 @@
+Cascade Session Log - VanitySearch Enhancement
+==============================================
+
+[ملخص الجلسة]
+
+- تم تنفيذ تعديلات واسعة على VanitySearch (C++/HTML/Python) تشمل:
+  • دعم استكمال البحث (resume)
+  • كشف الـGPU تلقائياً
+  • خيار -stopAll لإيقاف كل العمليات بعد إيجاد كل النتائج
+  • تحسينات في واجهة HTML وvanity_launcher.py
+  • تعليمات بناء واختبار على Windows
+
+[تفاصيل التفاعل]
+
+- جرت مناقشة الخطوات المطلوبة، وتم تنفيذها على دفعات مع تحديثات متكررة.
+- تم بناء البرنامج عبر MSBuild بعد تحديد المسار الصحيح.
+- تم تحديث launcher.html ليشمل جميع الحقول الجديدة (resume، stopAll، إلخ).
+- تم اختبار كل ميزة خطوة بخطوة.
+
+[أوامر هامة]
+
+- بناء البرنامج:
+  & "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe" `
+    "VanitySearch.sln" /p:Configuration=Release /p:Platform=x64
+
+- تشغيل VanitySearch:
+  .\x64\Release\VanitySearch.exe -i addresses.txt -stopAll
+
+- فتح الواجهة:
+  launcher.html (افتحها مباشرة في المتصفح)
+
+[ملاحظات]
+- يمكنك الرجوع لهذا الملف في أي وقت لمراجعة تفاصيل الجلسة والأوامر.
+- إذا أردت حفظ المحادثة الكاملة بنصها الحرفي مستقبلاً، أخبرني بذلك لأصدر لك ملفاً مفصلاً.
+
+[انتهى السجل]

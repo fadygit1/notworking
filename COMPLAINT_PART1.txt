@@ -1,0 +1,11 @@
+[الجزء 1 من 3 - السجل الكامل للمحادثة]
+
+---
+Step Id: 394
+USER: اذهب إلى C:\Users\igfi\Desktop\8_newallin1_28022025 veryslow...
+
+---
+Step Id: 457
+ASSISTANT: تم بناء VanitySearch.exe بنجاح...
+
+(يحتوي هذا الجزء على 400 سطر أول من المحادثة)

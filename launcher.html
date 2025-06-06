@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VanitySearch Command Builder</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;background:#f5f5f5;margin:0;padding:0}
+.container{max-width:720px;margin:40px auto;background:#fff;padding:24px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+h2{margin-top:0;color:#333}
+label{display:block;margin:12px 0 4px;color:#333;font-weight:600}
+input[type=text],input[type=number]{width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:14px}
+textarea{width:100%;min-height:80px;padding:8px;font-family:Consolas,monospace}
+.flex{display:flex;gap:12px;align-items:center}
+button{margin-top:16px;padding:10px 18px;background:#0078d4;border:none;color:#fff;border-radius:4px;font-size:14px;cursor:pointer}
+button:hover{background:#005fa1}
+.small{font-size:12px;color:#666}
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>VanitySearch Command Builder</h2>
+
+  <label>Start Key (hex 64-byte)</label>
+  <input id="startKey" type="text" placeholder="e.g. 000...001" oninput="updateRange()">
+
+  <label>End Key (hex 64-byte)</label>
+  <input id="endKey" type="text" placeholder="e.g. 000...FF" oninput="updateRange()">
+
+  <label class="small">Keys in range</label>
+  <div id="rangeInfo" class="small">&mdash;</div>
+
+  <label>Search Mode</label>
+  <div class="flex">
+    <label><input type="radio" name="mode" value="c" checked> Compressed</label>
+    <label><input type="radio" name="mode" value="u"> Uncompressed</label>
+    <label><input type="radio" name="mode" value="b"> Both</label>
+  </div>
+
+  <label><input id="gpu" type="checkbox" checked> Enable GPU</label>
+  <label class="small">GPU IDs – indices printed by VanitySearch at startup (0,1,...) <br>Leave blank = use first GPU, "all" = all GPUs</label>
+  <input id="gpuIds" type="text" placeholder="0,1">
+
+  <label>CPU Threads (-t) <span class="small">(leave blank for all)</span></label>
+  <input id="threads" type="number" min="1" placeholder="e.g. 56">
+
+  <label>Grid Size (-g) <span class="small">(threadsPerBlock x blocksPerGrid, advanced – leave blank for auto)</span></label>
+  <input id="grid" type="text" placeholder="2048x256">
+
+  <label class="small">Rule limits (leave blank to skip)</label>
+  <div class="flex" style="flex-wrap:wrap">
+    <div style="flex:1 1 120px"><label class="small">-r1</label><input id="r1" type="number" min="1" placeholder="e.g. 3" style="width:100%"></div>
+    <div style="flex:1 1 120px"><label class="small">-r2</label><input id="r2" type="number" min="1" placeholder="e.g. 2" style="width:100%"></div>
+    <div style="flex:1 1 120px"><label class="small">-r3</label><input id="r3" type="number" min="1" placeholder="e.g. 2" style="width:100%"></div>
+    <div style="flex:1 1 120px"><label class="small">-r4</label><input id="r4" type="number" min="1" placeholder="e.g. 2" style="width:100%"></div>
+    <div style="flex:1 1 120px"><label class="small">-r5</label><input id="r5" type="number" min="1" placeholder="e.g. 2" style="width:100%"></div>
+  </div>
+
+  <label>Addresses File (-i)</label>
+  <input id="infile" type="text" value="addresses.txt">
+
+  <label>Output File (-o)</label>
+  <input id="outfile" type="text" value="results.txt">
+
+  <label>Resume File (--resume)</label>
+  <input id="resumeFile" type="text" placeholder="results.txt">
+
+  <label><input id="stopFlag" type="checkbox"> Add -stop flag</label>
+  <label><input id="stopAllFlag" type="checkbox"> Add -stopAll flag</label>
+
+  <label><input id="splitCheck" type="checkbox"> Split key-space</label>
+  <div class="flex"><input id="chunkNum" type="number" min="2" placeholder="Chunks (e.g. 1000000)" style="flex:1 1 160px"></div>
+
+  <label><input id="showOutput" type="checkbox"> Show per-chunk console output</label>
+
+  <label><input id="skipDone" type="checkbox" checked> Skip chunks with existing results</label>
+
+  <button onclick="generate()">Generate Command</button>
+  <button onclick="copyCmd()">Copy to Clipboard</button>
+  <button onclick="downloadPs1()">Download PS1 Script</button>
+  <button onclick="detectGpu()">Detect GPU</button>
+
+  <label>Generated Command</label>
+  <textarea id="cmd" readonly></textarea>
+</div>
+
+<script>
+function pad64(hex){
+  return hex.replace(/^0x/,'').toLowerCase().padStart(64,'0');
+}
+function toBigInt(hex){
+  return BigInt('0x'+hex);
+}
+function formatNum(n){
+  return n.toLocaleString('en-US');
+}
+function updateRange(){
+  const info=document.getElementById('rangeInfo');
+  const s=document.getElementById('startKey').value.trim();
+  const e=document.getElementById('endKey').value.trim();
+  if(!s||!e){info.textContent='—';return;}
+  try{
+    const start=toBigInt(pad64(s));
+    const end=toBigInt(pad64(e));
+    if(end>start){
+      const diff=end-start+1n;
+      info.textContent=formatNum(diff)+' keys';
+    }else info.textContent='—';
+  }catch{info.textContent='—';}
+}
+function filterFlags(arr){
+  const res=[];
+  for(let i=0;i<arr.length;i++){
+    if(arr[i]==='--keyspace'){i++;continue;}
+    if(arr[i]==='-o'){i++;continue;}
+    res.push(arr[i]);
+  }
+  return res;
+}
+function generate(){
+  const startRaw=document.getElementById('startKey').value.trim();
+  const endRaw=document.getElementById('endKey').value.trim();
+  if(!startRaw||!endRaw){alert('Enter start and end keys');return;}
+  let start,paddedStart,end;
+  try{paddedStart=pad64(startRaw);start=toBigInt(paddedStart);}catch(e){alert('Invalid start key');return;}
+  try{end=toBigInt(pad64(endRaw));}catch(e){alert('Invalid end key');return;}
+  if(end<=start){alert('End key must be greater than start key');return;}
+  const diff=(end-start).toString(16).toUpperCase();
+  // remove leading zeros in start for readability
+  const startSimplified=paddedStart.replace(/^0+/,'')||'0';
+  const parts=[`.\\x64\\Release\\VanitySearch.exe`];
+  parts.push(`--keyspace ${startSimplified}:+${diff}`);
+
+  const mode=document.querySelector('input[name="mode"]:checked').value;
+  if(mode==='u')parts.push('-u');
+  else if(mode==='b')parts.push('-b');
+
+  if(document.getElementById('gpu').checked){
+    parts.push('-gpu');
+    const ids=document.getElementById('gpuIds').value.trim();
+    if(ids)parts.push('-gpuId',ids);
+  }
+  const threads=document.getElementById('threads').value.trim();
+  if(threads)parts.push('-t',threads);
+
+  const grid=document.getElementById('grid').value.trim();
+  if(grid)parts.push('-g',grid);
+
+  // collect individual r1..r5 if provided (override repeat field)
+  const rules=["r1","r2","r3","r4","r5"];
+  rules.forEach((tag,i)=>{
+    const val=document.getElementById(tag)?.value.trim();
+    if(val) parts.push(`-${tag}`,val);
+  });
+
+  const infile=document.getElementById('infile').value.trim();
+  if(infile)parts.push('-i',infile);
+  const outfile=document.getElementById('outfile').value.trim();
+  if(outfile)parts.push('-o',outfile);
+  const resume=document.getElementById('resumeFile').value.trim();
+  if(resume)parts.push('--resume',resume);
+
+  if(document.getElementById('stopFlag').checked)parts.push('-stop');
+  if(document.getElementById('stopAllFlag').checked)parts.push('-stopAll');
+
+  const singleCmd=parts.join(' `\n    ');
+
+  // handle split
+  let outputText='';
+  const doSplit=document.getElementById('splitCheck').checked;
+  if(doSplit){
+    const n=parseInt(document.getElementById('chunkNum').value||'0',10);
+    if(!n||n<2){alert('Enter valid chunk number (>1)');return;}
+    const startBI=start;
+    const endBI=end;
+    const total=endBI-startBI;
+    const step=total/BigInt(n);
+    const common=filterFlags(parts.slice(1));
+    const showOut=document.getElementById('showOutput').checked;
+    const skipDone=document.getElementById('skipDone').checked;
+    const fileCheckCond=skipDone? 'if(!(Test-Path "results_$i.txt")) { ':'';
+    const fileCheckClose=skipDone? ' }':'';
+    const visFlag=showOut?' -NoNewWindow':'';
+    if(n>1000){
+      // condensed PS1 with loop
+      outputText=`# PS1 generated by launcher (condensed)\n$chunks=${n}\n$start=[System.Numerics.BigInteger]::Parse(\"${startBI.toString(16)}\",[System.Globalization.NumberStyles]::AllowHexSpecifier)\n$step=[System.Numerics.BigInteger]::Parse(\"${step.toString(16)}\",[System.Globalization.NumberStyles]::AllowHexSpecifier)\n$end=[System.Numerics.BigInteger]::Parse(\"${endBI.toString(16)}\",[System.Globalization.NumberStyles]::AllowHexSpecifier)\nfor($i=0;$i -lt $chunks;$i++){\n    ${skipDone?'if(!(Test-Path "results_$i.txt")) {':''}\n    $chunkStart=$start + ($step * [System.Numerics.BigInteger]$i)\n    if($i -eq $chunks-1){ $diff=$end-$chunkStart } else { $diff=$step-1 }\n    $ks=\"--keyspace $($chunkStart.ToString('X')):+$($diff.ToString('X'))\"\n    $args=\"$ks ${common.join(' ')} -o results_$i.txt\"\n    Start-Process -FilePath \".\\x64\\Release\\VanitySearch.exe\" -ArgumentList $args${visFlag}\n    ${skipDone?'}':''}\n}`;
+    }else{
+      let scriptLines=['# Auto-generated by launcher',''];
+      for(let i=0;i<n;i++){
+        const chunkStart=startBI+step*BigInt(i);
+        const chunkDiff=(i===n-1? endBI-chunkStart : step-1n);
+        const stHex=chunkStart.toString(16).toUpperCase();
+        const diffHex=chunkDiff.toString(16).toUpperCase();
+        const ks=`--keyspace ${stHex.replace(/^0+/,'')||'0'}:+${diffHex}`;
+        const allFlags=[ks,...common,`-o results_${i}.txt`].join(' ');
+        scriptLines.push(`${skipDone?`if(!(Test-Path \"results_${i}.txt\")) { `:''}Start-Process -FilePath ".\\x64\\Release\\VanitySearch.exe" -ArgumentList "${allFlags}"${visFlag}${skipDone?' }':''}`);
+      }
+      outputText=scriptLines.join('\n');
+    }
+  }else{
+    outputText=singleCmd;
+  }
+  document.getElementById('cmd').value=outputText;
+}
+function copyCmd(){
+  const cmd=document.getElementById('cmd').value;
+  if(!cmd){alert('Generate first');return;}
+  navigator.clipboard.writeText(cmd).then(()=>alert('Copied'));}
+function downloadPs1(){
+  const txt=document.getElementById('cmd').value;
+  if(!txt){alert('Generate first');return;}
+  const blob=new Blob([txt],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=document.getElementById('splitCheck').checked?'run_all.ps1':'run_vanitysearch.ps1';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function detectGpu(){
+  const exec = require('child_process').exec;
+  exec('powershell.exe -Command ".\\x64\\Release\\VanitySearch.exe -ci"', (error, stdout, stderr) => {
+    if (error) {
+      console.error(`exec error: ${error}`);
+      return;
+    }
+    console.log(`stdout: ${stdout}`);
+    console.log(`stderr: ${stderr}`);
+  });
+}
+</script>
+</body>
+</html>
